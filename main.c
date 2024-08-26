@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include <windows.h>
 #include <stdlib.h>
 #include <conio.h>
@@ -78,10 +79,15 @@ int main() {
 
 
   int c;
+  boolean bufferChanged = 1;
   while (1) {
-    printBuffer(buffer, lineCount, hConsole);
+
+    if (bufferChanged) {
+      printBuffer(buffer, lineCount, hConsole);
+    }
     SetConsoleCursorPosition(hConsole, cursorPos); 
 
+    bufferChanged = 0;
     c = _getch();
 
     if (c == 27) {
@@ -124,13 +130,37 @@ int main() {
         memmove(&buffer[cursorPos.Y][cursorPos.X+1], &buffer[cursorPos.Y][cursorPos.X], strlen(&buffer[cursorPos.Y][cursorPos.X])+1);
         buffer[cursorPos.Y][cursorPos.X] = c;
         cursorPos.X++;
-      } else if (c == 8) {
-        if (cursorPos.X == 0 && cursorPos.Y != 0) {
-          memmove(&buffer[cursorPos.Y-1][strlen(buffer[cursorPos.Y-1])], &buffer[cursorPos.Y][cursorPos.X], strlen(buffer[cursorPos.Y]));
+
+      } else if (c == 8) { // Backspace key
+        if (cursorPos.X == 0 && cursorPos.Y > 0) {
+          int prevLineLen = strlen(buffer[cursorPos.Y - 1]);
+          int currentLineLen = strlen(buffer[cursorPos.Y]);
+
+          // Check if there's enough space in the previous line
+          if (prevLineLen + currentLineLen < BUFFER_SIZE) {
+            // Append current line to the end of previous line
+            memcpy(buffer[cursorPos.Y - 1] + prevLineLen, buffer[cursorPos.Y], currentLineLen);
+            buffer[cursorPos.Y - 1][prevLineLen + currentLineLen] = '\0';  // Null-terminate
+
+            // Shift all lines after current line up by one
+            for (int i = cursorPos.Y; i < capacity- 1; i++) {
+              memcpy(buffer[i], buffer[i + 1], capacity);
+            }
+            memset(buffer[capacity- 1], 0, capacity);  // Clear last line
+
+            // Move cursor to end of previous line
+            cursorPos.Y--;
+            cursorPos.X = prevLineLen;
+          }
+        } else if (cursorPos.X > 0) {
+          // Remove character before cursor
+          memmove(&buffer[cursorPos.Y][cursorPos.X - 1], 
+                  &buffer[cursorPos.Y][cursorPos.X], 
+                  capacity- cursorPos.X);
+          cursorPos.X--;
         }
-        memmove(&buffer[cursorPos.Y][cursorPos.X-1], &buffer[cursorPos.Y][cursorPos.X], strlen(&buffer[cursorPos.Y][cursorPos.X])+1);
-        cursorPos.X--;
       }
+      bufferChanged = 1;
     }
   }
 
