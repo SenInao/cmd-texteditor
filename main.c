@@ -26,7 +26,7 @@ int printBuffer(char** buffer, int lineCount, HANDLE hConsole) {
   SetConsoleCursorPosition(hConsole, startPos);
 
   for (int i = 0; i < lineCount; i++) {
-    printf("%s", buffer[i]);
+    printf("%s\n", buffer[i]);
   }
 
   return 0;
@@ -67,6 +67,10 @@ int main() {
   }
 
   while (fgets(buffer[lineCount], BUFFER_SIZE, fpointer) != NULL) {
+    size_t len = strlen(buffer[lineCount]);
+    if (len > 0 && buffer[lineCount][len - 1] == '\n') {
+        buffer[lineCount][len - 1] = '\0';
+    }
     lineCount++;
     if (lineCount>=capacity) {
       capacity+=1;
@@ -91,6 +95,8 @@ int main() {
     c = _getch();
 
     if (c == 27) {
+      cursorPos.Y = lineCount;
+      SetConsoleCursorPosition(hConsole, cursorPos); 
       break;
     }
 
@@ -108,8 +114,8 @@ int main() {
             break;
           }
           cursorPos.Y--;
-          if (cursorPos.X > strlen(buffer[cursorPos.Y])-1) {
-            cursorPos.X = strlen(buffer[cursorPos.Y])-1;
+          if (cursorPos.X > strlen(buffer[cursorPos.Y])) {
+            cursorPos.X = strlen(buffer[cursorPos.Y]);
           }
           break;
         case 77:
@@ -119,9 +125,12 @@ int main() {
           cursorPos.X++;
           break;
         case 80:
+          if (cursorPos.Y == lineCount-1) {
+            break;
+          }
           cursorPos.Y++;
-          if (cursorPos.X > strlen(buffer[cursorPos.Y])-1) {
-            cursorPos.X = strlen(buffer[cursorPos.Y])-1;
+          if (cursorPos.X > strlen(buffer[cursorPos.Y])) {
+            cursorPos.X = strlen(buffer[cursorPos.Y]);
           }
           break;
       }
@@ -131,39 +140,42 @@ int main() {
         buffer[cursorPos.Y][cursorPos.X] = c;
         cursorPos.X++;
 
-      } else if (c == 8) { // Backspace key
+      } else if (c == 8) {
         if (cursorPos.X == 0 && cursorPos.Y > 0) {
           int prevLineLen = strlen(buffer[cursorPos.Y - 1]);
           int currentLineLen = strlen(buffer[cursorPos.Y]);
 
-          // Check if there's enough space in the previous line
           if (prevLineLen + currentLineLen < BUFFER_SIZE) {
-            // Append current line to the end of previous line
-            memcpy(buffer[cursorPos.Y - 1] + prevLineLen, buffer[cursorPos.Y], currentLineLen);
-            buffer[cursorPos.Y - 1][prevLineLen + currentLineLen] = '\0';  // Null-terminate
-
-            // Shift all lines after current line up by one
-            for (int i = cursorPos.Y; i < capacity- 1; i++) {
-              memcpy(buffer[i], buffer[i + 1], capacity);
+            strcat(buffer[cursorPos.Y - 1], buffer[cursorPos.Y]);
+            for (int i = cursorPos.Y; i < lineCount - 1; i++) {
+              strcpy(buffer[i], buffer[i + 1]);
             }
-            memset(buffer[capacity- 1], 0, capacity);  // Clear last line
-
-            // Move cursor to end of previous line
+            lineCount--;
             cursorPos.Y--;
             cursorPos.X = prevLineLen;
           }
+
         } else if (cursorPos.X > 0) {
-          // Remove character before cursor
           memmove(&buffer[cursorPos.Y][cursorPos.X - 1], 
-                  &buffer[cursorPos.Y][cursorPos.X], 
-                  capacity- cursorPos.X);
+                  &buffer[cursorPos.Y][cursorPos.X], strlen(buffer[cursorPos.Y]));
           cursorPos.X--;
+        } 
+      } else if (c == 13) {
+        for (int i = lineCount; i > cursorPos.Y; i--) {
+          strcpy(buffer[i], buffer[i - 1]);
         }
+        strcpy(buffer[cursorPos.Y+1], &buffer[cursorPos.Y][cursorPos.X]);
+
+        buffer[cursorPos.Y][cursorPos.X] = '\0';
+
+        cursorPos.X = 0;
+        cursorPos.Y++;
+        lineCount++;
       }
+
       bufferChanged = 1;
     }
   }
-
   fclose(fpointer);
 
   return 0;
