@@ -19,13 +19,16 @@ ScreenSize getScreenSize(CONSOLE_SCREEN_BUFFER_INFO csbi) {
     return size;
 }
 
-int printBuffer(char** buffer, int lineCount, HANDLE hConsole) {
+int printBuffer(char** buffer, int lineCount, HANDLE hConsole, int startLine, ScreenSize size) {
   COORD startPos = {0, 0};
 
   system("cls");
   SetConsoleCursorPosition(hConsole, startPos);
 
-  for (int i = 0; i < lineCount; i++) {
+  for (int i = startLine; i < lineCount; i++) {
+    if (i - startLine == size.rows - 1) {
+      break;
+    }
     printf("%s\n", buffer[i]);
   }
 
@@ -83,6 +86,7 @@ int main() {
   COORD cursorPos = {0, 0};
   char filename[256];
   char **buffer = NULL;
+  int startLine = 0;
   int lineCount = 0;
   int capacity = INITIAL_CAPACITY;
   char isSaved[30];
@@ -112,10 +116,13 @@ int main() {
   int c;
   boolean bufferChanged = 1;
   boolean saved = 1;
+  ScreenSize size = getScreenSize(csbi);
+  
   while (1) {
+    size = getScreenSize(csbi);
 
     if (bufferChanged) {
-      printBuffer(buffer, lineCount, hConsole);
+      printBuffer(buffer, lineCount, hConsole, startLine, size);
       printInfo(hConsole, csbi, saved, filename, isSaved);
     }
     SetConsoleCursorPosition(hConsole, cursorPos); 
@@ -123,8 +130,11 @@ int main() {
     bufferChanged = 0;
     c = _getch();
 
+    int realY = cursorPos.Y + startLine;
+
     if (c == 27) {
-      cursorPos.Y = lineCount;
+      cursorPos.Y = 0;
+      system("cls");
       SetConsoleCursorPosition(hConsole, cursorPos); 
       break;
     }
@@ -140,54 +150,69 @@ int main() {
           break;
         case 72: //UP arrow
           if (cursorPos.Y == 0) {
+            if (startLine > 0) {
+              startLine--;
+              bufferChanged = 1;
+            }
             break;
           }
           cursorPos.Y--;
-          if (cursorPos.X > strlen(buffer[cursorPos.Y])) {
-            cursorPos.X = strlen(buffer[cursorPos.Y]);
+          if (cursorPos.X > strlen(buffer[realY-1])) {
+            cursorPos.X = strlen(buffer[realY-1]);
           }
           break;
         case 77: //RIGHT arrow
-          if (cursorPos.X >= strlen(buffer[cursorPos.Y])) {
+          if (cursorPos.X >= strlen(buffer[realY])) {
             break;
           }
           cursorPos.X++;
           break;
         case 80: //DOWN arrow
-          if (cursorPos.Y == lineCount-1) {
+          if (realY == lineCount-1) {
+            break;
+          } 
+          if (cursorPos.Y >= size.rows-2 && cursorPos.Y < lineCount-1) {
+            startLine++;
+            bufferChanged = 1;
             break;
           }
           cursorPos.Y++;
-          if (cursorPos.X > strlen(buffer[cursorPos.Y])) {
-            cursorPos.X = strlen(buffer[cursorPos.Y]);
+          if (cursorPos.X > strlen(buffer[realY+1])) {
+            cursorPos.X = strlen(buffer[realY+1]);
           }
           break;
       }
+
     } else {
       saved = 0;
       if (c >= 32 && c <=126) { //Any writable character
-        memmove(&buffer[cursorPos.Y][cursorPos.X+1], &buffer[cursorPos.Y][cursorPos.X], strlen(&buffer[cursorPos.Y][cursorPos.X])+1);
-        buffer[cursorPos.Y][cursorPos.X] = c;
+        memmove(&buffer[realY][cursorPos.X+1], &buffer[realY][cursorPos.X], strlen(&buffer[realY][cursorPos.X])+1);
+        buffer[realY][cursorPos.X] = c;
         cursorPos.X++;
 
       } else if (c == 8) { //BACKSPACE
-        if (cursorPos.X == 0 && cursorPos.Y > 0) { //Go to previous line if backspace on first character
-          int prevLineLen = strlen(buffer[cursorPos.Y - 1]);
-          int currentLineLen = strlen(buffer[cursorPos.Y]);
+        if (cursorPos.X == 0 && cursorPos.Y + startLine > 0) { //Go to previous line if backspace on first character
+          int prevLineLen = strlen(buffer[realY - 1]);
+          int currentLineLen = strlen(buffer[realY]);
 
           if (prevLineLen + currentLineLen < BUFFER_SIZE) {
-            strcat(buffer[cursorPos.Y - 1], buffer[cursorPos.Y]);
-            for (int i = cursorPos.Y; i < lineCount - 1; i++) {
+            strcat(buffer[realY - 1], buffer[realY]);
+            for (int i = realY; i < lineCount - 1; i++) {
               strcpy(buffer[i], buffer[i + 1]);
             }
             lineCount--;
-            cursorPos.Y--;
             cursorPos.X = prevLineLen;
+            
+            if (cursorPos.Y == 0) {
+              startLine--;
+            } else {
+              cursorPos.Y--;
+            }
           }
 
         } else if (cursorPos.X > 0) {
-          memmove(&buffer[cursorPos.Y][cursorPos.X - 1], 
-                  &buffer[cursorPos.Y][cursorPos.X], strlen(buffer[cursorPos.Y]));
+          memmove(&buffer[realY][cursorPos.X - 1], 
+                  &buffer[realY][cursorPos.X], strlen(buffer[realY]));
           cursorPos.X--;
         } 
 
@@ -201,16 +226,20 @@ int main() {
           }
         }
 
-        for (int i = lineCount; i > cursorPos.Y; i--) {
+        for (int i = lineCount; i > realY; i--) {
           strcpy(buffer[i], buffer[i - 1]);
         }
-        strcpy(buffer[cursorPos.Y+1], &buffer[cursorPos.Y][cursorPos.X]);
+        strcpy(buffer[realY+1], &buffer[realY][cursorPos.X]);
 
-        buffer[cursorPos.Y][cursorPos.X] = '\0';
+        buffer[realY][cursorPos.X] = '\0';
 
         cursorPos.X = 0;
-        cursorPos.Y++;
         lineCount++;
+        if (realY - startLine < size.rows - 2) {
+          cursorPos.Y++;
+        } else {
+          startLine++;
+        }
 
       } else if (c == 19) { //CTRL+S
         saveBuffer(filename, buffer, lineCount);
