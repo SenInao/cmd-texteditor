@@ -19,17 +19,19 @@ ScreenSize getScreenSize(CONSOLE_SCREEN_BUFFER_INFO csbi) {
     return size;
 }
 
-int printBuffer(char** buffer, int lineCount, HANDLE hConsole, int startLine, ScreenSize size) {
-  COORD startPos = {0, 0};
-
-  system("cls");
-  SetConsoleCursorPosition(hConsole, startPos);
-
+int printBuffer(char** buffer, int lineCount, HANDLE hConsole, int startLine, ScreenSize size, int changeLine, int prevLineCount) {
   for (int i = startLine; i < lineCount; i++) {
-    if (i - startLine == size.rows - 1) {
+    if (i - startLine >= size.rows - 1) {
       break;
     }
-    printf("%s\n", buffer[i]);
+    if (changeLine <= i || changeLine == -1) {
+      SetConsoleCursorPosition(hConsole, (COORD){0, i - startLine});
+      printf("%-*s", size.columns, buffer[i]); // Print spaces to clear the line
+    }
+  }
+
+  if (prevLineCount > lineCount) {
+      printf("%-*s", size.columns, "");
   }
 
   return 0;
@@ -45,7 +47,7 @@ void printInfo(HANDLE hConsole, CONSOLE_SCREEN_BUFFER_INFO csbi, int saved, char
   } else {
     strcat(isSaved, "EDITED, ctrl+s to save");
   }
-  printf("%s | %s", filename, isSaved);
+  printf("%-*s", size.columns, isSaved);
 }
 
 void readFileToBuffer(char filename[], char ***buffer, int *lineCount, int *capacity) {
@@ -87,7 +89,9 @@ int main() {
   char filename[256];
   char **buffer = NULL;
   int startLine = 0;
+  int changeLine = -1;
   int lineCount = 0;
+  int prevLineCount = lineCount;
   int capacity = INITIAL_CAPACITY;
   char isSaved[30];
 
@@ -122,7 +126,7 @@ int main() {
     size = getScreenSize(csbi);
 
     if (bufferChanged) {
-      printBuffer(buffer, lineCount, hConsole, startLine, size);
+      printBuffer(buffer, lineCount, hConsole, startLine, size, changeLine, prevLineCount);
       printInfo(hConsole, csbi, saved, filename, isSaved);
     }
     SetConsoleCursorPosition(hConsole, cursorPos); 
@@ -153,6 +157,7 @@ int main() {
             if (startLine > 0) {
               startLine--;
               bufferChanged = 1;
+              changeLine = -1;
             }
             break;
           }
@@ -174,6 +179,7 @@ int main() {
           if (cursorPos.Y >= size.rows-2 && cursorPos.Y < lineCount-1) {
             startLine++;
             bufferChanged = 1;
+            changeLine = -1;
             break;
           }
           cursorPos.Y++;
@@ -189,6 +195,7 @@ int main() {
         memmove(&buffer[realY][cursorPos.X+1], &buffer[realY][cursorPos.X], strlen(&buffer[realY][cursorPos.X])+1);
         buffer[realY][cursorPos.X] = c;
         cursorPos.X++;
+        changeLine = realY;
 
       } else if (c == 8) { //BACKSPACE
         if (cursorPos.X == 0 && cursorPos.Y + startLine > 0) { //Go to previous line if backspace on first character
@@ -200,13 +207,16 @@ int main() {
             for (int i = realY; i < lineCount - 1; i++) {
               strcpy(buffer[i], buffer[i + 1]);
             }
+            prevLineCount = lineCount;
             lineCount--;
             cursorPos.X = prevLineLen;
             
             if (cursorPos.Y == 0) {
               startLine--;
+              changeLine = -1;
             } else {
               cursorPos.Y--;
+              changeLine = realY - 1;
             }
           }
 
@@ -214,6 +224,7 @@ int main() {
           memmove(&buffer[realY][cursorPos.X - 1], 
                   &buffer[realY][cursorPos.X], strlen(buffer[realY]));
           cursorPos.X--;
+          changeLine = realY;
         } 
 
       } else if (c == 13) { //ENTER
@@ -234,11 +245,14 @@ int main() {
         buffer[realY][cursorPos.X] = '\0';
 
         cursorPos.X = 0;
+        prevLineCount = lineCount;
         lineCount++;
         if (realY - startLine < size.rows - 2) {
           cursorPos.Y++;
+          changeLine = realY;
         } else {
           startLine++;
+          changeLine = -1;
         }
 
       } else if (c == 19) { //CTRL+S
